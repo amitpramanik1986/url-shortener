@@ -1,4 +1,4 @@
-# 03 – Target Architecture: URL Shortener
+# Target Architecture: URL Shortener
 
 | | |
 |---|---|
@@ -31,7 +31,7 @@ These are working numbers for sizing. Revise them once real traffic is known.
 | Redirects | 100:1 read/write ratio, about **100,000/s peak** | Redirects are the hot path |
 | Record size | ~500 B (key, URL, metadata) | ×3 replicas |
 | Raw storage | ~1.8 TB/year before replication, ~5.5 TB with RF = 3 | TTL expiry reduces this |
-| Redirect latency | p99 < 20 ms at the service, < 50 ms end to end | Cache hit rate target > 90 % |
+| Redirect latency | p99 < 20 ms at the service, < 50 ms end to end | Single-partition Cassandra read at `LOCAL_ONE` |
 | Availability | 99.95 % for redirects | Redirects keep working when analytics is down |
 
 ---
@@ -68,7 +68,6 @@ flowchart LR
         LS["Link Service<br/>create · redirect · manage<br/>N pods"]
         AS["Analytics Service<br/>stats query API"]
         AP["Analytics Processor<br/>Kafka Streams"]
-        KC[("Redis<br/>redirect cache")]
     end
 
     subgraph T4["Tier 4 · Data and messaging"]
@@ -82,7 +81,6 @@ flowchart LR
     GW <--> RL
     GW -->|"/api/v1/links/**<br/>/{key}"| LS
     GW -->|"/api/v1/analytics/**"| AS
-    LS <--> KC
     LS -->|"read/write links<br/>USING TTL"| CAS
     LS -->|"link.created<br/>link.accessed"| K
     K --> AP --> ADB
@@ -95,7 +93,7 @@ flowchart LR
 |------|-----|------|-----------|------|
 | `POST /api/v1/links` | Client, Admin | ✅ JWT, scope `links:create` | ✅ Per client (tiered) | GW → Link Service → Cassandra → Kafka |
 | `GET /api/v1/links`, `GET/DELETE /api/v1/links/{key}` | Owner, Admin | ✅ JWT, owner check or `admin` role | Per client (generous) | GW → Link Service → Cassandra |
-| `GET /{key}` | Visitor | ❌ Public | Per IP (abuse protection only) | GW → Link Service → Redis cache → Cassandra → `302` (+ async Kafka event) |
+| `GET /{key}` | Visitor | ❌ Public | Per IP (abuse protection only) | GW → Link Service → Cassandra → `302` (+ async Kafka event) |
 | `GET /api/v1/analytics/links/{key}` | Owner, Admin | ✅ JWT | Per client | GW → Analytics Service → analytics store |
 | `/api/v1/admin/**` | Admin | ✅ JWT, role `admin` | Separate policy | GW → Link / Analytics Service |
 
@@ -113,7 +111,6 @@ flowchart LR
 | 3 · App | **Link Service** | Create, redirect, list, disable; generates short keys; publishes events | Spring Boot (current code base) | Stateless; HPA on CPU/RPS |
 | 3 · App | Analytics Processor | Consumes Kafka; aggregates counts with exactly-once processing | Kafka Streams | One instance per partition group |
 | 3 · App | Analytics Service | Read-only stats API | Spring Boot | Stateless; HPA |
-| 3 · App | Redirect cache | `key → (url, expiresAt)` cache for the hot path | Redis Cluster (+ local Caffeine L1) | Sharded |
 | 4 · Data | **Apache Cassandra** | System of record for links; native TTL | Cassandra 5.x (or managed: Astra, Amazon Keyspaces) | Add nodes linearly |
 | 4 · Data | **Apache Kafka** | Durable event log for analytics | Kafka 3.x / MSK / Confluent | Add partitions and brokers |
 | 4 · Data | Analytics store | Totals and time-series counts | Cassandra tables (ClickHouse later for ad-hoc queries) | Linear |
@@ -187,24 +184,17 @@ sequenceDiagram
     participant V as Visitor
     participant GW as API Gateway
     participant LS as Link Service
-    participant RC as Redis cache
     participant CS as Cassandra
     participant K as Kafka
 
     V->>GW: GET /aZ3k
     GW->>GW: Per-IP abuse limit (no auth)
     GW->>LS: GET /aZ3k
-    LS->>RC: GET link:aZ3k
-    alt Cache hit
-        RC-->>LS: url, expiresAt
-    else Cache miss
-        LS->>CS: SELECT … WHERE short_key='aZ3k' (LOCAL_ONE)
-        alt Not found at LOCAL_ONE
-            LS->>CS: Retry at LOCAL_QUORUM (link may have just been created)
-        end
-        CS-->>LS: row (or none)
-        LS->>RC: SET link:aZ3k EX min(remaining TTL, 1h)
+    LS->>CS: SELECT … WHERE short_key='aZ3k' (LOCAL_ONE)
+    alt Not found at LOCAL_ONE
+        LS->>CS: Retry at LOCAL_QUORUM (link may have just been created)
     end
+    CS-->>LS: row (or none)
     alt Found and not expired
         LS--)K: produce link.accessed (async, acks=all)
         LS-->>GW: 302 Location: https://target
@@ -216,9 +206,9 @@ sequenceDiagram
     end
 ```
 
-- **Cache TTL ≤ the link's remaining TTL**, so the cache never serves an expired link.
-- Unknown keys are briefly **negatively cached** (e.g. 30 s) so repeated lookups for a missing key don't all reach Cassandra.
-- Disabling a link deletes its cache entry and publishes `link.disabled`.
+- Every redirect is a single-partition read on `links_by_key`. Read throughput scales by adding Cassandra nodes.
+- Expired links are never served, because Cassandra hides rows whose TTL has elapsed (§7.4).
+- Disabling a link updates `status` at `LOCAL_QUORUM` and publishes `link.disabled`.
 
 ---
 
@@ -397,8 +387,8 @@ Cassandra `counter` columns are **not** used: they aren't idempotent (a retried 
 |---------|----------|
 | **Input safety** | Only `http`/`https` URLs, ≤ 2048 characters; block `javascript:`, `data:` and links back to this service; optional Safe Browsing check; admins can block domains |
 | **Privacy** | Hash IP addresses (salted SHA-256) before publishing; never put raw personal data in Kafka; retention follows policy |
-| **Observability** | OpenTelemetry traces (gateway → service → Cassandra/Kafka), Micrometer → Prometheus/Grafana, JSON logs with `traceId`. Key SLIs: redirect p99, 5xx rate, cache hit rate, Kafka consumer lag, outbox lag, rate-limit rejections |
-| **Resilience** | Timeouts and circuit breakers (Resilience4j) on Cassandra/Redis/Kafka clients; bulkhead the analytics publisher so it can never slow redirects; health probes (liveness/readiness) |
+| **Observability** | OpenTelemetry traces (gateway → service → Cassandra/Kafka), Micrometer → Prometheus/Grafana, JSON logs with `traceId`. Key SLIs: redirect p99, 5xx rate, Cassandra read latency, Kafka consumer lag, outbox lag, rate-limit rejections |
+| **Resilience** | Timeouts and circuit breakers (Resilience4j) on Cassandra/Kafka clients; bulkhead the analytics publisher so it can never slow redirects; health probes (liveness/readiness) |
 | **Deployment** | Containers on Kubernetes across 3 AZs, blue/green or canary through the gateway, infrastructure as code (Terraform), secrets in a vault |
 | **Disaster recovery** | Cassandra multi-DC (RPO ≈ 0 for links), Kafka MirrorMaker 2 to a second region, DNS failover. Target RTO < 15 min |
 
@@ -407,7 +397,6 @@ Cassandra `counter` columns are **not** used: they aren't idempotent (a retried 
 | Failure | Impact | Behaviour |
 |---------|--------|-----------|
 | One Link Service pod dies | None | LB/HPA replaces it; its unused ID range is skipped |
-| Redis cache down | Higher latency | Fall back to Cassandra `LOCAL_ONE`; circuit breaker opens |
 | Redis rate limiter down | Limits less precise | Per-instance in-memory limit on create; no limit on redirect |
 | One Cassandra node down | None | RF=3 with `LOCAL_QUORUM` still succeeds (2 of 3) |
 | Whole AZ down | Reduced capacity | Replicas in the other AZs; HPA scales up |
@@ -441,7 +430,7 @@ Cassandra `counter` columns are **not** used: they aren't idempotent (a retried 
 | ADR-002 | Range-leased numeric IDs encoded as Base62 for short keys | Proposed |
 | ADR-003 | API Gateway owns authentication, coarse authorization and rate limiting; services own ownership checks | Proposed |
 | ADR-004 | Kafka with `acks=all`, RF=3, transactional outbox, and exactly-once Kafka Streams aggregation for analytics | Proposed |
-| ADR-005 | Redis as both the redirect cache and the shared rate-limit store; redirect cache TTL ≤ link TTL | Proposed |
+| ADR-005 | Redis only at the API Gateway (Tier 2), as the shared rate-limit store. No application-tier cache: redirects read Cassandra directly | Proposed |
 | ADR-006 | `302` (not `301`) redirects so every hit reaches the service and is counted | Proposed |
 
 ## 12. Open questions
