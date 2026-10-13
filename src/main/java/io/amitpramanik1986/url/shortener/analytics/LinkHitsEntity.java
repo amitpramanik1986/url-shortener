@@ -20,7 +20,7 @@ class LinkHitsEntity {
     }
 
     @Id
-    @Column(name = "SHORT_LINK_ID")
+    @Column(name = "SHORT_LINK_ID", length = 10)
     private String id;
 
     @Column(name = "HIT_COUNT", nullable = false)
@@ -29,11 +29,6 @@ class LinkHitsEntity {
     @Column(name = "UPDATED_DATE", nullable = false)
     @Setter
     private LocalDateTime updatedDate;
-
-    public void hasHit() {
-        this.hitCount++;
-        this.updatedDate = LocalDateTime.now();
-    }
 
     @Version
     private Long version;

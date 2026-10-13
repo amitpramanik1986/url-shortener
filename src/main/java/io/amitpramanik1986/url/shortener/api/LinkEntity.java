@@ -17,7 +17,7 @@ class LinkEntity {
     LinkEntity(String fullLink, Long timeToLiveInSeconds){
         this.fullLink = fullLink;
         this.createdDate = LocalDateTime.now();
-        if (timeToLiveInSeconds != null) {
+        if (timeToLiveInSeconds != null && timeToLiveInSeconds > 0) {
             this.expiredDate = this.createdDate.plusSeconds(timeToLiveInSeconds);
         }
     }

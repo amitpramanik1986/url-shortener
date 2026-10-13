@@ -5,6 +5,7 @@ import io.amitpramanik1986.url.shortener.core.LinkNotFoundException;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -14,13 +15,16 @@ public class UrlShortService {
 
     private final LinkRepository linkRepository;
 
-    public String createShortLinkID(@NotNull String fullLink, Long timeToLiveInSeconds){
+    @Value("${url.shortener.host}")
+    private String urlHost;
 
-        log.info("Shortening URL [{}] with TTL [{}] seconds", fullLink, timeToLiveInSeconds);
-        var savedEntity = linkRepository.save(new LinkEntity(fullLink, timeToLiveInSeconds));
+    public LinkApiPayload.LinkCreateOutput createShortLinkID(@NotNull LinkApiPayload.LinkCreateInput input){
+
+        log.info("Shortening URL [{}] with TTL [{}] seconds", input.url(), input.ttlInSeconds());
+        var savedEntity = linkRepository.save(new LinkEntity(input.url(), input.ttlInSeconds()));
         var shortLinkId = BaseConverter.toBase(savedEntity.getId());
         log.info("Short LinkID [{}] for actual ID [{}]", shortLinkId, savedEntity.getId());
-        return shortLinkId;
+        return new LinkApiPayload.LinkCreateOutput(shortLinkId, urlHost + "/" + shortLinkId, savedEntity.getCreatedDate(), savedEntity.getExpiredDate());
     }
 
     public String getFullLink(@NotNull String key) throws LinkNotFoundException {

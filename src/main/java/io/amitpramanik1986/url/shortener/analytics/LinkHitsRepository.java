@@ -1,6 +1,7 @@
 package io.amitpramanik1986.url.shortener.analytics;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.NativeQuery;
 import org.springframework.stereotype.Repository;
 
@@ -17,4 +18,13 @@ interface LinkHitsRepository extends JpaRepository<LinkHitsEntity, String> {
             WHERE SHORT_LINK_ID = :linkId
             """)
     Optional<LinkStatistics> findLinkStatisticsByLinkId(String linkId);
+
+    @Modifying
+    @NativeQuery("""
+            UPDATE T_LINK_HIT_COUNT
+            SET HIT_COUNT = HIT_COUNT + 1,
+                UPDATED_DATE = CURRENT_TIMESTAMP
+            WHERE SHORT_LINK_ID = :linkId
+            """)
+    void incrementHitCount(String linkId);
 }

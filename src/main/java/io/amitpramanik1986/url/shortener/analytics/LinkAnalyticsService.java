@@ -3,11 +3,14 @@ package io.amitpramanik1986.url.shortener.analytics;
 import io.amitpramanik1986.url.shortener.core.LinkNotFoundException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
+import org.springframework.resilience.annotation.Retryable;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 class LinkAnalyticsService {
 
     private final LinkHitsRepository linkHitsRepository;
@@ -19,9 +22,10 @@ class LinkAnalyticsService {
     }
 
     @Transactional
+    @Retryable
     public void auditLinkAccessedEvent(String linkId) {
-        var linkHitsEntity = linkHitsRepository.findById(linkId).orElseThrow(() -> new IllegalArgumentException("Link not found"));
-        linkHitsEntity.hasHit();
+        log.info("This should go to Kafka/EventBus for async processing");
+        linkHitsRepository.incrementHitCount(linkId);
     }
 
     public @Nullable LinkStatistics getLinkStatistics(String linkId) throws LinkNotFoundException {
