@@ -25,7 +25,7 @@ class LinkApiEndpoints {
     private final UrlShortService urlShortService;
     private final ApplicationEventPublisher eventPublisher;
 
-    @PostMapping(name = "/create",
+    @PostMapping(value = "/create",
             consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
             produces = MediaType.TEXT_PLAIN_VALUE)
     @Operation(
@@ -37,8 +37,12 @@ class LinkApiEndpoints {
                     )
             }
     )
-    ResponseEntity<String> shorten(@RequestParam String inputUrl){
-        var shortLinkId = urlShortService.createShortLinkID(inputUrl);
+    ResponseEntity<String> shorten(@RequestParam String inputUrl,
+                                   @RequestParam(required = false) Long timeToLiveInSeconds){
+        if (timeToLiveInSeconds != null && timeToLiveInSeconds <= 0) {
+            return ResponseEntity.badRequest().body("timeToLiveInSeconds must be a positive number");
+        }
+        var shortLinkId = urlShortService.createShortLinkID(inputUrl, timeToLiveInSeconds);
         eventPublisher.publishEvent(new LinkCreatedEvent(shortLinkId, "Anonymus"));
         return ResponseEntity.status(HttpStatus.CREATED).body(shortLinkId) ;
     }

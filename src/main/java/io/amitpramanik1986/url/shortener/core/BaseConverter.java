@@ -11,7 +11,8 @@ public class BaseConverter {
     private static final ConcurrentHashMap<Character,Integer> SYMBOL_POSITION;
 
     static{
-        BASE = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_!.$".toCharArray();
+        //RFC 3986 unreserved characters
+        BASE = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_.~".toCharArray();
 
         int mapSize =  1 << (31 - Integer.numberOfLeadingZeros(BASE.length ));
         SYMBOL_POSITION = new ConcurrentHashMap<>(mapSize);

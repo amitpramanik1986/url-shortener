@@ -25,9 +25,9 @@ class GlobalExceptionHandler {
 
         eventPublisher.publishEvent(ex);
         ProblemDetail problemDetail = ProblemDetail.forStatus(HttpStatus.NOT_FOUND.value());
-        problemDetail.setTitle("Link Not Found - "+ex.getLinkId());
+        problemDetail.setTitle("Link Not Found or Expired - "+ex.getLinkId());
         problemDetail.setProperty("timestamp", Instant.now());
-        return ResponseEntity.ok(problemDetail);
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problemDetail);
     }
 
     @ExceptionHandler(Exception.class)
@@ -36,6 +36,6 @@ class GlobalExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatus(HttpStatus.SERVICE_UNAVAILABLE);
         problemDetail.setTitle("Server Error");
         problemDetail.setProperty("timestamp", Instant.now());
-        return ResponseEntity.ok(problemDetail);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(problemDetail);
     }
 }

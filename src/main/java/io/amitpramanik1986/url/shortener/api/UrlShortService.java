@@ -14,10 +14,10 @@ public class UrlShortService {
 
     private final LinkRepository linkRepository;
 
-    public String createShortLinkID(@NotNull String fullLink){
+    public String createShortLinkID(@NotNull String fullLink, Long timeToLiveInSeconds){
 
-        log.info("Shortening URL [{}]", fullLink);
-        var savedEntity = linkRepository.save(new LinkEntity(fullLink));
+        log.info("Shortening URL [{}] with TTL [{}] seconds", fullLink, timeToLiveInSeconds);
+        var savedEntity = linkRepository.save(new LinkEntity(fullLink, timeToLiveInSeconds));
         var shortLinkId = BaseConverter.toBase(savedEntity.getId());
         log.info("Short LinkID [{}] for actual ID [{}]", shortLinkId, savedEntity.getId());
         return shortLinkId;
@@ -26,7 +26,8 @@ public class UrlShortService {
     public String getFullLink(@NotNull String key) throws LinkNotFoundException {
         var id = BaseConverter.toDecimal(key);
         return linkRepository.findById(id)
-                .map(link-> link.getFullLink())
+                .filter(LinkEntity::isNotExpired)
+                .map(LinkEntity::getFullLink)
                 .orElseThrow(()-> new LinkNotFoundException(key));
     }
 }

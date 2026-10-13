@@ -14,9 +14,12 @@ import java.time.LocalDateTime;
 @Getter
 class LinkEntity {
 
-    LinkEntity(String fullLink){
+    LinkEntity(String fullLink, Long timeToLiveInSeconds){
         this.fullLink = fullLink;
         this.createdDate = LocalDateTime.now();
+        if (timeToLiveInSeconds != null) {
+            this.expiredDate = this.createdDate.plusSeconds(timeToLiveInSeconds);
+        }
     }
 
     @Id @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "linkEntitySequence")
@@ -34,4 +37,10 @@ class LinkEntity {
     private LocalDateTime expiredDate;
 
 
+    public boolean isNotExpired() {
+        if (expiredDate == null) {
+            return true;
+        }
+        return expiredDate.isAfter(LocalDateTime.now());
+    }
 }
