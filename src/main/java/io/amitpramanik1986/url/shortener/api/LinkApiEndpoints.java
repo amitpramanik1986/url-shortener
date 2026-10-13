@@ -6,6 +6,7 @@ import io.amitpramanik1986.url.shortener.core.LinkNotFoundException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -37,14 +38,14 @@ class LinkApiEndpoints {
                     )
             }
     )
-    ResponseEntity<LinkApiPayload.LinkCreateOutput> createShortLink(@RequestBody LinkApiPayload.LinkCreateInput input) {
+    ResponseEntity<LinkApiPayload.LinkCreateOutput> createShortLink(@Valid @RequestBody LinkApiPayload.LinkCreateInput input) {
         var linkCreateOutput = urlShortService.createShortLinkID(input);
         eventPublisher.publishEvent(new LinkCreatedEvent(linkCreateOutput.shortKey(), "Anonymus"));
         return ResponseEntity.status(HttpStatus.CREATED).body(linkCreateOutput) ;
     }
 
 
-    @GetMapping("/{key:[0-9A-Za-z_.~-]{1,10}}")
+    @GetMapping("/{key:[0-9A-Za-z_~-]{1,10}}")
     @Operation(
             summary = "Visit short link",
             responses = {

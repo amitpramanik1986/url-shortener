@@ -12,7 +12,7 @@ public class BaseConverter {
 
     static{
         //RFC 3986 unreserved characters
-        BASE = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_.~".toCharArray();
+        BASE = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_~".toCharArray();
 
         int mapSize =  1 << (31 - Integer.numberOfLeadingZeros(BASE.length ));
         SYMBOL_POSITION = new ConcurrentHashMap<>(mapSize);
@@ -23,7 +23,7 @@ public class BaseConverter {
     }
 
     public static String toBase(long decimal){
-        StringBuilder sb = new StringBuilder(7);
+        StringBuilder sb = new StringBuilder(10);
         int reminder;
         do{
             reminder = (int)(decimal % BASE.length);

@@ -1,6 +1,7 @@
 package io.amitpramanik1986.url.shortener.api;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -26,7 +27,8 @@ class LinkEntity {
     @Column(name = "LINK_ID")
     private Long id;
 
-    @Column(name = "FULL_LINK", updatable = false, nullable = false)
+    @Column(name = "FULL_LINK", length = 2048, updatable = false, nullable = false)
+    @Size(max = 2048)
     private String fullLink;
 
     @Column(name = "CREATED_DATE", updatable = false, nullable = false)

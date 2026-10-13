@@ -290,7 +290,7 @@ USING TTL 86400;
 
 - **Per-record TTL:** `USING TTL <ttlInSeconds>` on the insert, applied to both tables. Links without a TTL either never expire, or get a product-defined maximum via `default_time_to_live`.
 - **Automatic clean-up:** Cassandra hides expired cells **immediately** and removes them during **compaction** after `gc_grace_seconds`. No batch job is needed.
-- **`410 Gone` vs `404`:** once a row has expired it can't be read, so the service can't tell "expired" from "never existed". To return `410`, also write a small `expired_marker` row with a longer TTL (e.g. TTL + 30 days), or return `404` for both. Recommendation: return `404` for simplicity; add the marker if product needs `410`.
+- **Expired links return `404`** (decided in AMB-07, 2026-10-13). Once a row has expired it can't be read, so expired and never-existing keys are treated the same and no marker row is needed.
 - **Tombstones:** TTL expiry creates tombstones. Keep `gc_grace_seconds` low (1 day) on TTL tables, run regular repairs, and alert on `TombstoneScannedHistogram`.
 - **DynamoDB equivalent:** an `expires_at` epoch attribute set as the table's TTL attribute. Because deletion can lag by up to about 48 h, the service **must** compare `expires_at` with the current time on every read.
 
@@ -431,12 +431,11 @@ Cassandra `counter` columns are **not** used: they aren't idempotent (a retried 
 | ADR-003 | API Gateway owns authentication, coarse authorization and rate limiting; services own ownership checks | Proposed |
 | ADR-004 | Kafka with `acks=all`, RF=3, transactional outbox, and exactly-once Kafka Streams aggregation for analytics | Proposed |
 | ADR-005 | Redis only at the API Gateway (Tier 2), as the shared rate-limit store. No application-tier cache: redirects read Cassandra directly | Proposed |
-| ADR-006 | `302` (not `301`) redirects so every hit reaches the service and is counted | Proposed |
+| ADR-006 | `302` (not `301`) redirects so every hit reaches the service and is counted | Accepted (AMB-08, 2026-10-13) |
 
 ## 12. Open questions
 
-1. Should expired links return `410` (needs a marker row) or `404`?
-2. Maximum TTL, and a default TTL for links created without one?
-3. Self-managed Cassandra or a managed service (Astra / Amazon Keyspaces)? Keyspaces has limits on LWTs and batches that affect §6.2 and the outbox.
-4. Are custom aliases planned? If so, they need `INSERT … IF NOT EXISTS` on `links_by_key`.
-5. Analytics retention period and privacy requirements (GDPR) for referrer and user-agent data.
+1. Maximum TTL, and a default TTL for links created without one?
+2. Self-managed Cassandra or a managed service (Astra / Amazon Keyspaces)? Keyspaces has limits on LWTs and batches that affect §6.2 and the outbox.
+3. Are custom aliases planned? If so, they need `INSERT … IF NOT EXISTS` on `links_by_key`.
+4. Analytics retention period and privacy requirements (GDPR) for referrer and user-agent data.
